@@ -126,27 +126,54 @@ def predict_customer(cid):
 # ---------------------------------------------
 # Safe SHAP + LIME Explanation (Cloud-Compatible)
 # ---------------------------------------------
+# ---------------------------------------------------------
+# Finlytix Safe SHAP + LIME Explainability (Cloud Compatible)
+# ---------------------------------------------------------
 def explain_customer(prepared):
     import shap
-    X_sample = shap.sample(prepared, 50)  # small background for speed
+    import numpy as np
 
-    # KernelExplainer works with any classifier
-    def predict_fn(X):
-        return model.predict_proba(X)
+    def safe_dense(X):
+        from scipy import sparse
+        if sparse.issparse(X):
+            return X.toarray()
+        return np.array(X)
 
-    explainer = shap.KernelExplainer(predict_fn, X_sample)
-    shap_vals = explainer.shap_values(prepared, nsamples=100)
+    # Try TreeExplainer first (fast)
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_vals = explainer.shap_values(prepared)
+        # Handle multiclass outputs (XGBClassifier returns 2-class list)
+        if isinstance(shap_vals, list):
+            shap_vals = shap_vals[1]
+        shap_vals = safe_dense(shap_vals)[0]
 
-    # Handle multiclass (xgboost outputs 2 classes)
-    if isinstance(shap_vals, list):
-        shap_vals = shap_vals[1]
+    except Exception as e:
+        # Fallback to KernelExplainer (safe for Streamlit Cloud)
+        st.warning("⚠️ TreeExplainer failed, switching to KernelExplainer for compatibility.")
+        background = shap.sample(prepared, 50)
+        explainer = shap.KernelExplainer(model.predict_proba, background)
+        shap_vals = explainer.shap_values(prepared, nsamples=100)
+        if isinstance(shap_vals, list):
+            shap_vals = shap_vals[1]
+        shap_vals = safe_dense(shap_vals)[0]
 
-    shap_vals = ensure_dense(shap_vals)[0]
+    # --- Handle invalid / empty shap values safely ---
+    shap_vals = np.nan_to_num(shap_vals, nan=0.0)
+
+    # Compute top features safely
     order = np.argsort(np.abs(shap_vals))[::-1]
+    if len(order) == 0:
+        return shap_vals, [], []
+
     top = [(feature_names[i], shap_vals[i]) for i in order[:10]]
-    pos = [(f, v) for f, v in top if v > 0]
-    neg = [(f, v) for f, v in top if v < 0]
+
+    # Filter with numeric safety
+    pos = [(f, v) for f, v in top if isinstance(v, (int, float)) and v > 0]
+    neg = [(f, v) for f, v in top if isinstance(v, (int, float)) and v < 0]
+
     return shap_vals, pos, neg
+
 
 
 def pretty_factors(factors):
