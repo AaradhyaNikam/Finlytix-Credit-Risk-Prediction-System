@@ -124,7 +124,7 @@ def predict_customer(cid):
     return prob_default, prob_repay, risk, person, prepared
 
 def explain_customer(prepared):
-    explainer = shap.TreeExplainer(model)
+    explainer = shap.TreeExplainer(model, feature_perturbation="interventional", model_output="probability")
     shap_vals = ensure_dense(explainer.shap_values(prepared))[0]
     order = np.argsort(np.abs(shap_vals))[::-1]
     top = [(feature_names[i], shap_vals[i]) for i in order[:10]]
