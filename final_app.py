@@ -22,16 +22,27 @@ st.set_page_config(page_title="Finlytix - Credit Risk AI", page_icon="💰", lay
 # -----------------------------
 def get_feature_names(pipeline):
     feature_names = []
+
     for name, trans, cols in pipeline.transformers_:
         if name == 'remainder':
             continue
-        if hasattr(trans, 'get_feature_names_out'):
-            fn = trans.get_feature_names_out(cols)
-        else:
+
+        # Handle transformers that are not yet fitted
+        try:
+            if hasattr(trans, 'get_feature_names_out'):
+                fn = trans.get_feature_names_out(cols)
+            else:
+                fn = cols
+        except Exception:
+            # Fallback if transformer not fitted
             fn = cols
+
         feature_names.extend(fn)
-    # Clean prefixes like num__ / cat__
-    return [f.split("__")[-1] for f in feature_names]
+
+    # Clean prefixes (num__ / cat__)
+    feature_names = [f.split("__")[-1] for f in feature_names]
+    return feature_names
+
 
 # -----------------------------
 # Load model, pipeline, data
