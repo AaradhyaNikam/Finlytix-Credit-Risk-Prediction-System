@@ -78,37 +78,62 @@ def predict_customer(cid):
     risk = "High" if prob_d >= 0.7 else ("Medium" if prob_d >= 0.4 else "Low")
     return prob_d, prob_r, risk, x_df, X_prep
 
-# -----------------------------
-# Explainability
-# -----------------------------
+# ---------------------------------------------------
+# Finlytix Explainability (Final Stable Version)
+# ---------------------------------------------------
 def explain_customer(prepared):
     import shap
+    import numpy as np
+    from scipy import sparse
+
     def safe_dense(X):
-        if sparse.issparse(X): return X.toarray()
+        if sparse.issparse(X):
+            return X.toarray()
         return np.array(X)
 
     try:
+        # Try fast TreeExplainer
         explainer = shap.TreeExplainer(model)
         shap_vals = explainer.shap_values(prepared)
-        if isinstance(shap_vals, list): shap_vals = shap_vals[1]
+        if isinstance(shap_vals, list):
+            shap_vals = shap_vals[1]
         shap_vals = safe_dense(shap_vals)
     except Exception:
+        # Fallback to KernelExplainer for cloud
         print("TreeExplainer failed — fallback to KernelExplainer.")
         background = shap.sample(prepared, 50)
         explainer = shap.KernelExplainer(model.predict_proba, background)
         shap_vals = explainer.shap_values(prepared, nsamples=100)
-        if isinstance(shap_vals, list): shap_vals = shap_vals[1]
+        if isinstance(shap_vals, list):
+            shap_vals = shap_vals[1]
         shap_vals = safe_dense(shap_vals)
 
-    shap_vals = np.nan_to_num(shap_vals, nan=0.0, posinf=0.0, neginf=0.0)
-    shap_vals = shap_vals.flatten().astype(float, copy=False)
-    if shap_vals.size == 0:
-        return np.zeros(len(feature_names)), [], []
+    # Flatten and clean
+    shap_vals = np.nan_to_num(shap_vals, nan=0.0, posinf=0.0, neginf=0.0).flatten()
+    shap_vals = shap_vals.astype(float, copy=False)
 
-    shap_vals *= 1000  # scale for better visibility
+    # --- Defensive shape alignment ---
+    n_shap = shap_vals.shape[0]
+    n_feat = len(feature_names)
+    if n_shap < n_feat:
+        # pad missing shap values
+        shap_vals = np.pad(shap_vals, (0, n_feat - n_shap))
+    elif n_shap > n_feat:
+        # truncate extra shap values
+        shap_vals = shap_vals[:n_feat]
+
+    # --- Compute Top 10 Features ---
     order = np.argsort(np.abs(shap_vals))[::-1][:10]
-    top = [(feature_names[i], float(shap_vals[i])) for i in order if np.isfinite(shap_vals[i])]
+    top = []
+    for i in order:
+        try:
+            val = float(shap_vals[i])
+            if np.isfinite(val):
+                top.append((feature_names[i], val))
+        except Exception:
+            continue
 
+    # --- Separate positive/negative safely ---
     pos, neg = [], []
     for f, v in top:
         if v > 0.001:
@@ -117,6 +142,7 @@ def explain_customer(prepared):
             neg.append((f, v))
 
     return shap_vals, pos, neg
+
 
 # -----------------------------
 # Utility: Format SHAP factors
