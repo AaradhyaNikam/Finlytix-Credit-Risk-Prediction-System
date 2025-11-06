@@ -196,13 +196,24 @@ if mode == "📊 Dashboard":
                 st.pyplot(plt.gcf())
                 plt.clf()
 
-                # Force Plot (SHAP)
-                st.markdown("### ⚡ SHAP Force Plot (Per-Customer Explainability)")
-                shap.initjs()
-                force_html = shap.plots.force(explainer.expected_value, shap_vals, 
-                                               matplotlib=False, show=False, 
-                                               feature_names=feature_names)
-                st.components.v1.html(shap.getjs() + force_html.html(), height=300)
+            # Force Plot (SHAP)
+            st.markdown("### ⚡ SHAP Force Plot (Per-Customer Explainability)")
+            try:
+                # Create SHAP force plot as HTML (without IPython dependency)
+                force_plot_html = shap.plots.force(
+                        explainer.expected_value,
+                        shap_vals,
+                        matplotlib=False,
+                        feature_names=feature_names,
+                        show=False
+    )
+                import streamlit.components.v1 as components
+                components.html(force_plot_html.html(), height=300)
+            except Exception as e:
+                st.info("⚠️ Force Plot not supported in this environment. Displaying SHAP values instead.")
+                st.text(f"Top SHAP values: {shap_vals[:5]}")
+
+
 
                 # Global SHAP summary
                 st.markdown("---")
