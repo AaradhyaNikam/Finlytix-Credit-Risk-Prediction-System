@@ -54,31 +54,60 @@ def predict_customer(cid: int):
 # ---------------------------------------------------
 # Explainability (Tree→Kernel fallback)
 # ---------------------------------------------------
+# ---------------------------------------------------
+# Safe SHAP + LIME Explainability (Streamlit Cloud)
+# ---------------------------------------------------
 def explain_customer(prepared):
     import shap
+    import numpy as np
+
     def safe_dense(X):
-        if sparse.issparse(X): return X.toarray()
+        from scipy import sparse
+        if sparse.issparse(X):
+            return X.toarray()
         return np.array(X)
 
     try:
+        # Try fast TreeExplainer
         explainer = shap.TreeExplainer(model)
         shap_vals = explainer.shap_values(prepared)
-        if isinstance(shap_vals, list): shap_vals = shap_vals[1]
+        if isinstance(shap_vals, list):
+            shap_vals = shap_vals[1]
         shap_vals = safe_dense(shap_vals)[0]
     except Exception:
+        # Safe fallback for Streamlit Cloud
         print("TreeExplainer failed — fallback to KernelExplainer.")
         bg = shap.sample(prepared, 50)
         explainer = shap.KernelExplainer(model.predict_proba, bg)
         shap_vals = explainer.shap_values(prepared, nsamples=100)
-        if isinstance(shap_vals, list): shap_vals = shap_vals[1]
+        if isinstance(shap_vals, list):
+            shap_vals = shap_vals[1]
         shap_vals = safe_dense(shap_vals)[0]
 
-    shap_vals = np.nan_to_num(shap_vals, nan=0.0)
+    # --- Clean and validate SHAP values ---
+    shap_vals = np.nan_to_num(shap_vals, nan=0.0)  # replace NaN/inf with 0
+    shap_vals = shap_vals.astype(float, copy=False)  # force numeric dtype
+
+    # Guard for zero-length outputs
+    if shap_vals.shape[0] == 0:
+        return shap_vals, [], []
+
+    # Compute top absolute impacts
     order = np.argsort(np.abs(shap_vals))[::-1]
-    top = [(feature_names[i], shap_vals[i]) for i in order[:10]]
-    pos = [(f, v) for f, v in top if v > 0]
-    neg = [(f, v) for f, v in top if v < 0]
+    top = [(feature_names[i], shap_vals[i]) for i in order[:10]
+           if np.isfinite(shap_vals[i])]
+
+    # Safely separate positive/negative with numeric filter
+    pos, neg = [], []
+    for f, v in top:
+        if isinstance(v, (int, float, np.floating)):
+            if v > 0:
+                pos.append((f, float(v)))
+            elif v < 0:
+                neg.append((f, float(v)))
+
     return shap_vals, pos, neg
+
 
 def pretty_factors(factors):
     lines = []
