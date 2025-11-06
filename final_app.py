@@ -123,14 +123,31 @@ def predict_customer(cid):
     risk = "High" if prob_default >= 0.7 else ("Medium" if prob_default >= 0.4 else "Low")
     return prob_default, prob_repay, risk, person, prepared
 
+# ---------------------------------------------
+# Safe SHAP + LIME Explanation (Cloud-Compatible)
+# ---------------------------------------------
 def explain_customer(prepared):
-    explainer = shap.TreeExplainer(model, feature_perturbation="interventional", model_output="probability")
-    shap_vals = ensure_dense(explainer.shap_values(prepared))[0]
+    import shap
+    X_sample = shap.sample(prepared, 50)  # small background for speed
+
+    # KernelExplainer works with any classifier
+    def predict_fn(X):
+        return model.predict_proba(X)
+
+    explainer = shap.KernelExplainer(predict_fn, X_sample)
+    shap_vals = explainer.shap_values(prepared, nsamples=100)
+
+    # Handle multiclass (xgboost outputs 2 classes)
+    if isinstance(shap_vals, list):
+        shap_vals = shap_vals[1]
+
+    shap_vals = ensure_dense(shap_vals)[0]
     order = np.argsort(np.abs(shap_vals))[::-1]
     top = [(feature_names[i], shap_vals[i]) for i in order[:10]]
     pos = [(f, v) for f, v in top if v > 0]
     neg = [(f, v) for f, v in top if v < 0]
     return shap_vals, pos, neg
+
 
 def pretty_factors(factors):
     txt = []
