@@ -25,41 +25,33 @@ def to_dense(X):
     return np.array(X)
 
 def safe_feature_names_from_pipeline(pipeline, fallback_cols):
-    """Extract readable feature names; robust to unfitted transformers."""
     names = []
     try:
-        # Try pipeline.get_feature_names_out (if available)
         if hasattr(pipeline, "get_feature_names_out"):
             names = list(pipeline.get_feature_names_out())
-        else:
-            # Walk through ColumnTransformer
-            if hasattr(pipeline, "transformers_"):
-                for name, trans, cols in pipeline.transformers_:
-                    if name == "remainder":
-                        continue
-                    try:
-                        if hasattr(trans, "get_feature_names_out"):
-                            fn = list(trans.get_feature_names_out(cols))
-                        elif hasattr(trans, "named_steps"):  # pipeline inside
-                            # Try last step if it has get_feature_names_out
-                            last = list(trans.named_steps.values())[-1]
-                            if hasattr(last, "get_feature_names_out"):
-                                fn = list(last.get_feature_names_out(cols))
-                            else:
-                                fn = list(cols)
+        elif hasattr(pipeline, "transformers_"):
+            for name, trans, cols in pipeline.transformers_:
+                if name == "remainder":
+                    continue
+                try:
+                    if hasattr(trans, "get_feature_names_out"):
+                        fn = list(trans.get_feature_names_out(cols))
+                    elif hasattr(trans, "named_steps"):
+                        last = list(trans.named_steps.values())[-1]
+                        if hasattr(last, "get_feature_names_out"):
+                            fn = list(last.get_feature_names_out(cols))
                         else:
                             fn = list(cols)
-                    except Exception:
+                    else:
                         fn = list(cols)
-                    names.extend(fn)
+                except Exception:
+                    fn = list(cols)
+                names.extend(fn)
     except Exception:
         pass
 
-    if not names or len(names) == 0:
-        # Fallback to as many columns as transformed output width
-        names = list(fallback_cols)
-
-    # Clean prefixes like "num__" / "cat__"
+    if not names:
+        names = fallback_cols
     names = [n.split("__")[-1] for n in names]
     return names
 
@@ -71,7 +63,6 @@ def load_resources():
     if "id" not in df.columns:
         raise RuntimeError("testing-1.csv must contain an 'id' column.")
 
-    # Build a dummy transformed matrix to know output width if needed
     try:
         dummy = pipeline.transform(df.drop(columns=["id"]).iloc[:1])
         out_dim = to_dense(dummy).shape[1]
@@ -95,33 +86,21 @@ def predict_customer(cid: int):
     return prob_d, prob_r, risk, x_df, X
 
 def kernel_shap_single(prepared_X, background_X=None, nsamples=100):
-    """
-    Compute Kernel SHAP for a single row (prepared_X shape: (1, n_features)).
-    Returns (values, base_value, explainer).
-    """
     X_dense = to_dense(prepared_X)
-    # Build background if not provided
     if background_X is None:
-        # Sample up to 80 rows from entire DB for background (after transform)
         sample_raw = test_df.drop(columns=["id"]).sample(min(80, len(test_df)), random_state=42)
         background_X = to_dense(pipeline.transform(sample_raw))
-    else:
-        background_X = to_dense(background_X)
-
-    # Limit background size for speed/stability
+    background_X = to_dense(background_X)
     if background_X.shape[0] > 100:
         background_X = background_X[:100, :]
 
-    # KernelExplainer never depends on model internals (cloud-safe)
     explainer = shap.KernelExplainer(model.predict_proba, background_X)
     shap_vals = explainer.shap_values(X_dense, nsamples=nsamples)
 
-    # Binary: shap_vals is a list [class0, class1]; choose class1 (default)
     if isinstance(shap_vals, list) and len(shap_vals) > 1:
         shap_vals = shap_vals[1]
     shap_vals = to_dense(shap_vals)
 
-    # base values (expected value) for class1 if list
     base_value = explainer.expected_value
     if isinstance(base_value, (list, np.ndarray)) and len(np.atleast_1d(base_value)) > 1:
         base_value = float(np.atleast_1d(base_value)[1])
@@ -131,7 +110,6 @@ def kernel_shap_single(prepared_X, background_X=None, nsamples=100):
     return shap_vals, base_value, explainer
 
 def align_shap_and_names(shap_vals, names):
-    """Ensure lengths match; pad or truncate SHAP and return 1D float array + names."""
     vals = np.nan_to_num(to_dense(shap_vals), nan=0.0, posinf=0.0, neginf=0.0).flatten().astype(float, copy=False)
     n_shap, n_feat = vals.shape[0], len(names)
     if n_shap < n_feat:
@@ -141,13 +119,11 @@ def align_shap_and_names(shap_vals, names):
     return vals, names
 
 def increasing_decreasing_lists(vals, names, top_k=10, min_abs=1e-8, scale=1.0):
-    """Return lists of (name, value) for + and - impacts."""
     vals = vals * scale
     order = np.argsort(np.abs(vals))[::-1][:top_k]
     items = [(names[i], float(vals[i])) for i in order if np.isfinite(vals[i])]
     pos = [(f, v) for f, v in items if v > min_abs]
     neg = [(f, v) for f, v in items if v < -min_abs]
-    # Fallback to ensure something shows
     if not pos and not neg:
         items = [(names[i], float(vals[i])) for i in order[:max(5, top_k)]]
         pos = [(f, v) for f, v in items if v >= 0][:5]
@@ -170,10 +146,6 @@ def plot_bar_top(items, title):
     plt.clf()
 
 def plot_waterfall_like(vals, names, base_value, title="Waterfall (Force-like)"):
-    """
-    Matplotlib-only waterfall: shows signed contributions sorted by |impact|.
-    This avoids JS/IPython and works on Streamlit Cloud.
-    """
     order = np.argsort(np.abs(vals))[::-1][:10]
     contribs = [(names[i], vals[i]) for i in order]
     labels = [n for n, _ in contribs]
@@ -183,22 +155,18 @@ def plot_waterfall_like(vals, names, base_value, title="Waterfall (Force-like)")
     plt.figure(figsize=(9, 4.5))
     cum = base_value
     left = 0.0
-    bars_left = []
-    bars_width = []
+    bars_left, bars_width = [], []
     for v in impacts:
         bars_left.append(left)
         bars_width.append(v)
         left += v
 
-    # Draw base as reference line
     plt.axvline(base_value, linestyle="--", color="#999999", linewidth=1, label="Base value")
-
-    # Bars
     for y, (l, w, c) in enumerate(zip(bars_left, bars_width, colors)):
         plt.barh([labels[y]], [w], left=l, color=c)
 
     plt.title(title)
-    plt.xlabel("Contribution to log-odds/probability (approx.)")
+    plt.xlabel("Contribution to Risk Probability (approx.)")
     plt.tight_layout()
     st.pyplot(plt.gcf())
     plt.clf()
@@ -232,20 +200,16 @@ if mode == "📊 Dashboard":
                 st.error("id not found in dataset.")
             else:
                 prob_d, prob_r, risk, x_df, X_single = result
-
                 st.subheader(f"Prediction for Customer id {cid}")
                 c1, c2, c3 = st.columns(3)
                 c1.metric("Default Probability", f"{prob_d:.2%}")
                 c2.metric("Repayment Probability", f"{prob_r:.2%}")
                 c3.metric("Risk Level", risk)
 
-                # ---- Kernel SHAP (single) ----
                 shap_vals_single, base_val, _ = kernel_shap_single(X_single, nsamples=100)
                 shap_vals_single, feature_names_aligned = align_shap_and_names(shap_vals_single, feature_names)
 
-                # Optional amplification for interpretability (doesn't change model)
                 amplify = 1e3
-
                 pos, neg, items = increasing_decreasing_lists(
                     shap_vals_single, feature_names_aligned, top_k=10, min_abs=1e-8, scale=amplify
                 )
@@ -263,57 +227,67 @@ if mode == "📊 Dashboard":
                 plot_bar_top(items, "Top SHAP Impacts (signed)")
 
                 st.markdown("### ⚡ Waterfall (Force-like) — Local Explanation")
-                # Use non-HTML matplotlib waterfall to avoid IPython/JS issues
-                plot_waterfall_like(np.array(items, dtype=object)[:,1].astype(float),  # values in order used above
+                plot_waterfall_like(np.array(items, dtype=object)[:,1].astype(float),
                                     [it[0] for it in items], base_val, title="Local Waterfall Explanation")
 
                 # ---- Global SHAP (sampled) ----
                 st.markdown("---")
                 st.markdown("### 🌍 Global SHAP Summary (Sampled)")
                 try:
-                    raw_sample = test_df.drop(columns=["id"]).sample(min(200, len(test_df)), random_state=42)
+                    raw_sample = test_df.drop(columns=["id"]).sample(min(300, len(test_df)), random_state=42)
                     X_bg = to_dense(pipeline.transform(raw_sample))
-                    # Global Kernel SHAP on sample
-                    expl = shap.KernelExplainer(model.predict_proba, X_bg[:80])
-                    shap_vals_global = expl.shap_values(X_bg[:120], nsamples=80)
-                    if isinstance(shap_vals_global, list) and len(shap_vals_global) > 1:
-                        shap_vals_global = shap_vals_global[1]
-                    shap_vals_global = to_dense(shap_vals_global)
-                    # Align names
-                    if shap_vals_global.shape[1] != len(feature_names_aligned):
-                        m = min(shap_vals_global.shape[1], len(feature_names_aligned))
-                        shap_vals_global = shap_vals_global[:, :m]
-                        names_global = feature_names_aligned[:m]
-                    else:
-                        names_global = feature_names_aligned
 
-                    # Mean abs impact
+                    # TreeExplainer first
+                    try:
+                        expl = shap.TreeExplainer(model)
+                        shap_vals_global = expl.shap_values(X_bg)
+                        if isinstance(shap_vals_global, list) and len(shap_vals_global) > 1:
+                            shap_vals_global = shap_vals_global[1]
+                        shap_vals_global = to_dense(shap_vals_global)
+                    except Exception:
+                        bg_small = X_bg[:50]
+                        expl = shap.KernelExplainer(model.predict_proba, bg_small)
+                        shap_vals_global = expl.shap_values(X_bg[:100], nsamples=80)
+                        if isinstance(shap_vals_global, list) and len(shap_vals_global) > 1:
+                            shap_vals_global = shap_vals_global[1]
+                        shap_vals_global = to_dense(shap_vals_global)
+
+                    shap_vals_global = np.nan_to_num(shap_vals_global, nan=0.0)
+                    if shap_vals_global.shape[1] != len(feature_names):
+                        m = min(shap_vals_global.shape[1], len(feature_names))
+                        shap_vals_global = shap_vals_global[:, :m]
+                        names_global = feature_names[:m]
+                    else:
+                        names_global = feature_names
+
                     mean_abs = np.mean(np.abs(shap_vals_global), axis=0)
                     order = np.argsort(mean_abs)[::-1][:15]
                     labels = [names_global[i] for i in order]
-                    values = mean_abs[order] * amplify
+                    values = mean_abs[order] * 1000
 
-                    plt.figure(figsize=(8,4))
-                    plt.barh(labels[::-1], values[::-1])
-                    plt.xlabel("Mean |SHAP| (sampled, scaled)")
-                    plt.title("Global Feature Importance (Approx.)")
+                    plt.figure(figsize=(8, 4))
+                    plt.barh(labels[::-1], values[::-1], color="#1565C0")
+                    plt.xlabel("Mean |SHAP| (scaled)")
+                    plt.title("Global Feature Importance (Sampled)")
                     plt.tight_layout()
                     st.pyplot(plt.gcf())
                     plt.clf()
 
-                    # ---- Fairness: MonthlyIncome share ----
+                    # ---- Fairness ----
                     st.markdown("---")
                     st.markdown("### ⚖️ Fairness Analysis: Influence of MonthlyIncome")
                     income_idx = [i for i, f in enumerate(names_global) if "MonthlyIncome" in f]
                     total = np.sum(mean_abs) if np.sum(mean_abs) > 0 else 1.0
                     income_share = (np.sum(mean_abs[income_idx]) / total * 100.0) if income_idx else 0.0
-                    st.write(f"💡 MonthlyIncome contributes **{income_share:.2f}%** of the model's reasoning on this sample.")
+                    st.write(f"💡 MonthlyIncome contributes **{income_share:.2f}%** of the model's reasoning.")
                     if income_share > 25:
                         st.warning("Model relies heavily on income — review for fairness.")
                     else:
                         st.success("Income influence within fair and ethical range.")
-                except Exception:
-                    st.info("Global SHAP summary and fairness analysis unavailable in this environment.")
+
+                except Exception as e:
+                    st.info("Global SHAP summary unavailable in this environment.")
+                    st.text(f"Error: {e}")
 
                 with st.expander("📋 View Customer Data"):
                     st.dataframe(x_df)
@@ -341,7 +315,7 @@ elif mode == "💬 Chatbot":
             cid = int(m.group(1))
             result = predict_customer(cid)
             if not result:
-                st.session_state.history.append(("assistant", f"❌ id {cid} not found in database."))
+                st.session_state.history.append(("assistant", f"❌ id {cid} not found."))
             else:
                 prob_d, prob_r, risk, x_df, X_single = result
                 shap_vals_single, base_val, _ = kernel_shap_single(X_single, nsamples=100)
@@ -358,5 +332,4 @@ elif mode == "💬 Chatbot":
     for role, msg in st.session_state.history:
         with st.chat_message(role):
             st.markdown(msg)
-
 
