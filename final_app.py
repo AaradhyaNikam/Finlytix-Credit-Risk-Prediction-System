@@ -13,7 +13,7 @@ from lime.lime_tabular import LimeTabularExplainer
 from scipy import sparse
 
 # -----------------------------
-# Streamlit Page Config
+# Streamlit Config
 # -----------------------------
 st.set_page_config(page_title="Finlytix - Credit Risk AI", page_icon="💰", layout="wide")
 
@@ -22,27 +22,18 @@ st.set_page_config(page_title="Finlytix - Credit Risk AI", page_icon="💰", lay
 # -----------------------------
 def get_feature_names(pipeline):
     feature_names = []
-
     for name, trans, cols in pipeline.transformers_:
         if name == 'remainder':
             continue
-
-        # Handle transformers that are not yet fitted
         try:
             if hasattr(trans, 'get_feature_names_out'):
                 fn = trans.get_feature_names_out(cols)
             else:
                 fn = cols
         except Exception:
-            # Fallback if transformer not fitted
             fn = cols
-
         feature_names.extend(fn)
-
-    # Clean prefixes (num__ / cat__)
-    feature_names = [f.split("__")[-1] for f in feature_names]
-    return feature_names
-
+    return [f.split("__")[-1] for f in feature_names]
 
 # -----------------------------
 # Load model, pipeline, data
@@ -58,7 +49,7 @@ def load_resources():
 model, pipeline, test_df, feature_names = load_resources()
 
 # -----------------------------
-# Helper: Dense conversion
+# Utility: Safe Dense
 # -----------------------------
 def ensure_dense(X):
     if sparse.issparse(X):
@@ -66,7 +57,7 @@ def ensure_dense(X):
     return np.array(X)
 
 # -----------------------------
-# Prediction
+# Prediction Function
 # -----------------------------
 def predict_customer(cid):
     if cid not in test_df["id"].values:
@@ -78,75 +69,77 @@ def predict_customer(cid):
     risk = "High" if prob_d >= 0.7 else ("Medium" if prob_d >= 0.4 else "Low")
     return prob_d, prob_r, risk, x_df, X_prep
 
-# ---------------------------------------------------
-# Finlytix Explainability (Final Stable Version)
-# ---------------------------------------------------
+# -----------------------------
+# Explainability (SHAP + Force Plot)
+# -----------------------------
 def explain_customer(prepared):
     import shap
-    import numpy as np
     from scipy import sparse
 
     def safe_dense(X):
-        if sparse.issparse(X):
-            return X.toarray()
+        if sparse.issparse(X): return X.toarray()
         return np.array(X)
 
     try:
-        # Try fast TreeExplainer
         explainer = shap.TreeExplainer(model)
         shap_vals = explainer.shap_values(prepared)
         if isinstance(shap_vals, list):
             shap_vals = shap_vals[1]
         shap_vals = safe_dense(shap_vals)
     except Exception:
-        # Fallback to KernelExplainer for cloud
         print("TreeExplainer failed — fallback to KernelExplainer.")
-        background = shap.sample(prepared, 50)
-        explainer = shap.KernelExplainer(model.predict_proba, background)
+        bg = shap.sample(prepared, 50)
+        explainer = shap.KernelExplainer(model.predict_proba, bg)
         shap_vals = explainer.shap_values(prepared, nsamples=100)
         if isinstance(shap_vals, list):
             shap_vals = shap_vals[1]
         shap_vals = safe_dense(shap_vals)
 
-    # Flatten and clean
     shap_vals = np.nan_to_num(shap_vals, nan=0.0, posinf=0.0, neginf=0.0).flatten()
     shap_vals = shap_vals.astype(float, copy=False)
 
-    # --- Defensive shape alignment ---
+    # Defensive length alignment
     n_shap = shap_vals.shape[0]
     n_feat = len(feature_names)
     if n_shap < n_feat:
-        # pad missing shap values
         shap_vals = np.pad(shap_vals, (0, n_feat - n_shap))
     elif n_shap > n_feat:
-        # truncate extra shap values
         shap_vals = shap_vals[:n_feat]
 
-    # --- Compute Top 10 Features ---
+    # Rescale SHAP values (reverse StandardScaler)
+    try:
+        num_trans = pipeline.named_transformers_["num"]
+        scaler = num_trans.named_steps.get("scaler", None)
+        if scaler and hasattr(scaler, "scale_"):
+            shap_vals[:len(scaler.scale_)] *= scaler.scale_
+    except Exception:
+        pass
+
+    # Compute top 10 features
     order = np.argsort(np.abs(shap_vals))[::-1][:10]
     top = []
     for i in order:
-        try:
-            val = float(shap_vals[i])
-            if np.isfinite(val):
-                top.append((feature_names[i], val))
-        except Exception:
-            continue
+        val = float(shap_vals[i])
+        if np.isfinite(val):
+            clean_name = feature_names[i].replace("num__", "").replace("cat__", "")
+            top.append((clean_name, val))
 
-    # --- Separate positive/negative safely ---
+    # Separate positive (↑ risk) / negative (↓ risk)
     pos, neg = [], []
     for f, v in top:
-        if v > 0.001:
+        if v > 0.00001:
             pos.append((f, v))
-        elif v < -0.001:
+        elif v < -0.00001:
             neg.append((f, v))
 
-    return shap_vals, pos, neg
+    # Fallback if empty
+    if not pos and not neg:
+        mid = [(feature_names[i], shap_vals[i]) for i in order[:5]]
+        pos = [(f, v) for f, v in mid if v >= 0]
+        neg = [(f, v) for f, v in mid if v < 0]
 
+    return shap_vals, pos, neg, explainer
 
-# -----------------------------
-# Utility: Format SHAP factors
-# -----------------------------
 def pretty_factors(factors):
     lines = []
     for f, v in factors[:5]:
@@ -180,8 +173,9 @@ if mode == "📊 Dashboard":
                 col2.metric("Repayment Probability", f"{prob_r:.2%}")
                 col3.metric("Risk Level", risk)
 
-                shap_vals, pos, neg = explain_customer(X_prep)
+                shap_vals, pos, neg, explainer = explain_customer(X_prep)
 
+                # Local SHAP summary
                 st.markdown("### 🔍 Increasing & Decreasing Risk Factors")
                 colA, colB = st.columns(2)
                 with colA:
@@ -202,7 +196,15 @@ if mode == "📊 Dashboard":
                 st.pyplot(plt.gcf())
                 plt.clf()
 
-                # Global SHAP Summary Plot
+                # Force Plot (SHAP)
+                st.markdown("### ⚡ SHAP Force Plot (Per-Customer Explainability)")
+                shap.initjs()
+                force_html = shap.plots.force(explainer.expected_value, shap_vals, 
+                                               matplotlib=False, show=False, 
+                                               feature_names=feature_names)
+                st.components.v1.html(shap.getjs() + force_html.html(), height=300)
+
+                # Global SHAP summary
                 st.markdown("---")
                 st.markdown("### 🌍 Global SHAP Summary (Feature Importance)")
                 try:
@@ -210,13 +212,14 @@ if mode == "📊 Dashboard":
                     expl = shap.TreeExplainer(model)
                     global_vals = expl.shap_values(sample)
                     if isinstance(global_vals, list): global_vals = global_vals[1]
-                    shap.summary_plot(global_vals, features=sample, feature_names=feature_names, show=False, plot_size=(8,4))
+                    shap.summary_plot(global_vals, features=sample,
+                                      feature_names=feature_names, show=False, plot_size=(8,4))
                     st.pyplot(plt.gcf())
                     plt.clf()
                 except Exception:
                     st.info("Global SHAP summary unavailable in this environment.")
 
-                # Fairness Analysis
+                # Fairness analysis
                 st.markdown("---")
                 st.markdown("### ⚖️ Fairness Analysis: Influence of MonthlyIncome")
                 try:
@@ -224,7 +227,7 @@ if mode == "📊 Dashboard":
                     total = mean_abs.sum()
                     idx = [i for i,f in enumerate(feature_names) if "MonthlyIncome" in f]
                     income_share = mean_abs[idx].sum()/total*100 if idx else 0
-                    st.write(f"💡 MonthlyIncome contributes **{income_share:.2f}%** of total model reasoning.")
+                    st.write(f"💡 MonthlyIncome contributes **{income_share:.2f}%** of total reasoning.")
                     if income_share > 25:
                         st.warning("Model relies heavily on income — review for bias.")
                     else:
@@ -262,7 +265,7 @@ elif mode == "💬 Chatbot":
                 st.session_state.history.append(("assistant", f"❌ id {cid} not found."))
             else:
                 prob_d, prob_r, risk, x_df, X_prep = result
-                shap_vals, pos, neg = explain_customer(X_prep)
+                shap_vals, pos, neg, _ = explain_customer(X_prep)
                 msg = (f"**Customer id {cid}** — Risk: **{risk}**\n\n"
                        f"- Default Probability: **{prob_d:.2%}**\n"
                        f"- Repayment Probability: **{prob_r:.2%}**\n\n"
