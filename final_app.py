@@ -153,18 +153,10 @@ def plot_waterfall_like(vals, names, base_value, title="Waterfall (Force-like)")
     colors = ["#E53935" if v > 0 else "#1E88E5" for v in impacts]
 
     plt.figure(figsize=(9, 4.5))
-    cum = base_value
     left = 0.0
-    bars_left, bars_width = [], []
-    for v in impacts:
-        bars_left.append(left)
-        bars_width.append(v)
-        left += v
-
+    for i, (l, v) in enumerate(zip(labels, impacts)):
+        plt.barh(l, v, color=colors[i])
     plt.axvline(base_value, linestyle="--", color="#999999", linewidth=1, label="Base value")
-    for y, (l, w, c) in enumerate(zip(bars_left, bars_width, colors)):
-        plt.barh([labels[y]], [w], left=l, color=c)
-
     plt.title(title)
     plt.xlabel("Contribution to Risk Probability (approx.)")
     plt.tight_layout()
@@ -230,39 +222,45 @@ if mode == "📊 Dashboard":
                 plot_waterfall_like(np.array(items, dtype=object)[:,1].astype(float),
                                     [it[0] for it in items], base_val, title="Local Waterfall Explanation")
 
-                # ---- Global SHAP (sampled) ----
+                # ---- Global SHAP (Sampled) ----
                 st.markdown("---")
                 st.markdown("### 🌍 Global SHAP Summary (Sampled)")
                 try:
                     raw_sample = test_df.drop(columns=["id"]).sample(min(300, len(test_df)), random_state=42)
                     X_bg = to_dense(pipeline.transform(raw_sample))
 
-                    # TreeExplainer first
+                    # ---- TreeExplainer (fast)
                     try:
                         expl = shap.TreeExplainer(model)
                         shap_vals_global = expl.shap_values(X_bg)
                         if isinstance(shap_vals_global, list) and len(shap_vals_global) > 1:
                             shap_vals_global = shap_vals_global[1]
-                        shap_vals_global = to_dense(shap_vals_global)
+                        shap_vals_global = np.array(shap_vals_global, dtype=float)
                     except Exception:
+                        # ---- KernelExplainer fallback
                         bg_small = X_bg[:50]
                         expl = shap.KernelExplainer(model.predict_proba, bg_small)
                         shap_vals_global = expl.shap_values(X_bg[:100], nsamples=80)
                         if isinstance(shap_vals_global, list) and len(shap_vals_global) > 1:
                             shap_vals_global = shap_vals_global[1]
-                        shap_vals_global = to_dense(shap_vals_global)
+                        shap_vals_global = np.array(shap_vals_global, dtype=float)
 
-                    shap_vals_global = np.nan_to_num(shap_vals_global, nan=0.0)
-                    if shap_vals_global.shape[1] != len(feature_names):
-                        m = min(shap_vals_global.shape[1], len(feature_names))
+                    # ---- Clean & Align ----
+                    shap_vals_global = np.nan_to_num(shap_vals_global, nan=0.0, posinf=0.0, neginf=0.0)
+                    if shap_vals_global.ndim > 2:
+                        shap_vals_global = shap_vals_global.reshape(shap_vals_global.shape[0], -1)
+                    n_feat = len(feature_names)
+                    if shap_vals_global.shape[1] != n_feat:
+                        m = min(shap_vals_global.shape[1], n_feat)
                         shap_vals_global = shap_vals_global[:, :m]
                         names_global = feature_names[:m]
                     else:
                         names_global = feature_names
 
-                    mean_abs = np.mean(np.abs(shap_vals_global), axis=0)
-                    order = np.argsort(mean_abs)[::-1][:15]
-                    labels = [names_global[i] for i in order]
+                    mean_abs = np.mean(np.abs(shap_vals_global), axis=0).flatten()
+                    order = np.argsort(mean_abs)[::-1][:15].astype(int)
+
+                    labels = [names_global[int(i)] for i in order]
                     values = mean_abs[order] * 1000
 
                     plt.figure(figsize=(8, 4))
@@ -277,17 +275,16 @@ if mode == "📊 Dashboard":
                     st.markdown("---")
                     st.markdown("### ⚖️ Fairness Analysis: Influence of MonthlyIncome")
                     income_idx = [i for i, f in enumerate(names_global) if "MonthlyIncome" in f]
-                    total = np.sum(mean_abs) if np.sum(mean_abs) > 0 else 1.0
-                    income_share = (np.sum(mean_abs[income_idx]) / total * 100.0) if income_idx else 0.0
+                    total = float(np.sum(mean_abs)) if np.sum(mean_abs) > 0 else 1.0
+                    income_share = (float(np.sum(mean_abs[income_idx])) / total * 100.0) if income_idx else 0.0
                     st.write(f"💡 MonthlyIncome contributes **{income_share:.2f}%** of the model's reasoning.")
                     if income_share > 25:
                         st.warning("Model relies heavily on income — review for fairness.")
                     else:
                         st.success("Income influence within fair and ethical range.")
-
                 except Exception as e:
                     st.info("Global SHAP summary unavailable in this environment.")
-                    st.text(f"Error: {e}")
+                    st.text(f"Error details: {e}")
 
                 with st.expander("📋 View Customer Data"):
                     st.dataframe(x_df)
@@ -332,4 +329,5 @@ elif mode == "💬 Chatbot":
     for role, msg in st.session_state.history:
         with st.chat_message(role):
             st.markdown(msg)
+
 
