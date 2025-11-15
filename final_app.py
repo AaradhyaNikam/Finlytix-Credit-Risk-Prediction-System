@@ -153,10 +153,9 @@ def plot_waterfall_like(vals, names, base_value, title="Waterfall (Force-like)")
     colors = ["#E53935" if v > 0 else "#1E88E5" for v in impacts]
 
     plt.figure(figsize=(9, 4.5))
-    left = 0.0
     for i, (l, v) in enumerate(zip(labels, impacts)):
         plt.barh(l, v, color=colors[i])
-    plt.axvline(base_value, linestyle="--", color="#999999", linewidth=1, label="Base value")
+    plt.axvline(base_value, linestyle="--", color="#999999", linewidth=1)
     plt.title(title)
     plt.xlabel("Contribution to Risk Probability (approx.)")
     plt.tight_layout()
@@ -219,8 +218,11 @@ if mode == "📊 Dashboard":
                 plot_bar_top(items, "Top SHAP Impacts (signed)")
 
                 st.markdown("### ⚡ Waterfall (Force-like) — Local Explanation")
-                plot_waterfall_like(np.array(items, dtype=object)[:,1].astype(float),
-                                    [it[0] for it in items], base_val, title="Local Waterfall Explanation")
+                plot_waterfall_like(
+                    np.array(items, dtype=object)[:,1].astype(float),
+                    [it[0] for it in items], base_val,
+                    title="Local Waterfall Explanation"
+                )
 
                 # ---- Global SHAP (Sampled) ----
                 st.markdown("---")
@@ -229,7 +231,6 @@ if mode == "📊 Dashboard":
                     raw_sample = test_df.drop(columns=["id"]).sample(min(300, len(test_df)), random_state=42)
                     X_bg = to_dense(pipeline.transform(raw_sample))
 
-                    # ---- TreeExplainer (fast)
                     try:
                         expl = shap.TreeExplainer(model)
                         shap_vals_global = expl.shap_values(X_bg)
@@ -237,7 +238,6 @@ if mode == "📊 Dashboard":
                             shap_vals_global = shap_vals_global[1]
                         shap_vals_global = np.array(shap_vals_global, dtype=float)
                     except Exception:
-                        # ---- KernelExplainer fallback
                         bg_small = X_bg[:50]
                         expl = shap.KernelExplainer(model.predict_proba, bg_small)
                         shap_vals_global = expl.shap_values(X_bg[:100], nsamples=80)
@@ -245,8 +245,7 @@ if mode == "📊 Dashboard":
                             shap_vals_global = shap_vals_global[1]
                         shap_vals_global = np.array(shap_vals_global, dtype=float)
 
-                    # ---- Clean & Align ----
-                    shap_vals_global = np.nan_to_num(shap_vals_global, nan=0.0, posinf=0.0, neginf=0.0)
+                    shap_vals_global = np.nan_to_num(shap_vals_global, nan=0.0)
                     if shap_vals_global.ndim > 2:
                         shap_vals_global = shap_vals_global.reshape(shap_vals_global.shape[0], -1)
                     n_feat = len(feature_names)
@@ -282,12 +281,18 @@ if mode == "📊 Dashboard":
                         st.warning("Model relies heavily on income — review for fairness.")
                     else:
                         st.success("Income influence within fair and ethical range.")
+
                 except Exception as e:
                     st.info("Global SHAP summary unavailable in this environment.")
                     st.text(f"Error details: {e}")
 
+                # -------------------------------------------------
+                # FIXED SECTION: Show correct customer ID in table
+                # -------------------------------------------------
                 with st.expander("📋 View Customer Data"):
-                    st.dataframe(x_df)
+                    x_display = x_df.copy()
+                    x_display.insert(0, "id", cid)  # Show real ID correctly
+                    st.dataframe(x_display.reset_index(drop=True))
 
         except ValueError:
             st.error("Please enter a valid numeric id.")
@@ -322,12 +327,10 @@ elif mode == "💬 Chatbot":
                 reply = (f"**Customer id {cid}** — Risk: **{risk}**\n\n"
                          f"- Default Probability: **{prob_d:.2%}**\n"
                          f"- Repayment Probability: **{prob_r:.2%}**\n\n"
-                         "### 🔍 Increasing Risk Factors\n" + "\n".join([f"- {f}: ↑ ({v:+.6f})" for f, v in pos[:5]]) +
-                         "\n\n### 🔍 Decreasing Risk Factors\n" + "\n".join([f"- {f}: ↓ ({v:+.6f})" for f, v in neg[:5]]))
+                        "### 🔍 Increasing Risk Factors\n" + "\n".join([f"- {f}: ↑ ({v:+.6f})" for f, v in pos[:5]]) +
+                        "\n\n### 🔍 Decreasing Risk Factors\n" + "\n".join([f"- {f}: ↓ ({v:+.6f})" for f, v in neg[:5]]))
                 st.session_state.history.append(("assistant", reply))
 
     for role, msg in st.session_state.history:
         with st.chat_message(role):
             st.markdown(msg)
-
-
