@@ -125,7 +125,7 @@ def predict():
     elif n_shap > n_feat:
         shap_vals = shap_vals[:n_feat]
     
-    base_val = explainer.expected_value
+    base_val = explainer.expected_value 
     
     base_val = explainer.expected_value
     base_val = explainer.expected_value
