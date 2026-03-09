@@ -114,8 +114,20 @@ def predict():
     
     if isinstance(shap_vals, list) and len(shap_vals) > 1:
         shap_vals = shap_vals[1]
-    shap_vals = to_dense(shap_vals).flatten()
     
+    # 1. Flatten and clean SHAP values
+    shap_vals = np.nan_to_num(to_dense(shap_vals), nan=0.0, posinf=0.0, neginf=0.0).flatten().astype(float, copy=False)
+    
+    # 2. FIX: Align lengths of shap_vals and feature_names to prevent IndexError
+    n_shap, n_feat = shap_vals.shape[0], len(feature_names)
+    if n_shap < n_feat:
+        shap_vals = np.pad(shap_vals, (0, n_feat - n_shap))
+    elif n_shap > n_feat:
+        shap_vals = shap_vals[:n_feat]
+    
+    base_val = explainer.expected_value
+    
+    base_val = explainer.expected_value
     base_val = explainer.expected_value
     if isinstance(base_val, (list, np.ndarray)): base_val = float(base_val[1])
     
