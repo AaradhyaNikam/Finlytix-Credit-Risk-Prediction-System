@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Finlytix - Credit Risk AI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .metric-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+        #plot-container img { max-width: 100%; border-radius: 8px; }
+        .chat-box { height: 300px; overflow-y: auto; background: white; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; }
+        .bot-msg { color: #0d6efd; font-weight: 500; }
+    </style>
+</head>
+<body>
+<div class="container py-5">
+    <h1 class="mb-1">💰 Finlytix AI</h1>
+    <p class="text-muted mb-4">Transparent, Explainable & Ethical AI for Smart Financial Decisions</p>
+
+    <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard">📊 Dashboard</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat">💬 Chatbot</button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="myTabContent">
+        
+        <div class="tab-pane fade show active" id="dashboard">
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <input type="number" id="custId" class="form-control" placeholder="Enter Customer ID (e.g., 1234)">
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" onclick="getPrediction()">Analyze</button>
+                </div>
+            </div>
+
+            <div id="results" style="display: none;">
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="metric-card">
+                            <h5 class="text-muted">Default Probability</h5>
+                            <h2 id="prob_d">--</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="metric-card">
+                            <h5 class="text-muted">Repayment Probability</h5>
+                            <h2 id="prob_r">--</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="metric-card">
+                            <h5 class="text-muted">Risk Level</h5>
+                            <h2 id="risk_lvl">--</h2>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card p-3 mb-3">
+                            <h5>⬆️ Increasing Risk Factors</h5>
+                            <ul id="pos-factors"></ul>
+                        </div>
+                        <div class="card p-3">
+                            <h5>⬇️ Decreasing Risk Factors</h5>
+                            <ul id="neg-factors"></ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card p-3 text-center" id="plot-container">
+                            <h5>Local Waterfall Explanation</h5>
+                            <img id="shap-img" src="" alt="SHAP Plot">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="chat">
+            <div class="chat-box mb-3" id="chatHistory">
+                <p class="bot-msg">🤖 Hi! Type "check id [number]" to get a risk analysis and explanation.</p>
+            </div>
+            <div class="input-group">
+                <input type="text" id="chatInput" class="form-control" placeholder="e.g., check id 1234">
+                <button class="btn btn-primary" onclick="sendChat()">Send</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    async function fetchAPI(cid) {
+        const response = await fetch('/api/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customer_id: cid })
+        });
+        return response.json();
+    }
+
+    // Dashboard Logic
+    async function getPrediction() {
+        const cid = document.getElementById('custId').value;
+        if (!cid) return alert("Please enter an ID");
+        
+        const data = await fetchAPI(cid);
+        if (data.error) return alert(data.error);
+
+        document.getElementById('results').style.display = 'block';
+        document.getElementById('prob_d').innerText = data.prob_default;
+        document.getElementById('prob_r').innerText = data.prob_repay;
+        document.getElementById('risk_lvl').innerText = data.risk_level;
+        document.getElementById('shap-img').src = "data:image/png;base64," + data.plot_base64;
+
+        document.getElementById('pos-factors').innerHTML = data.positive_factors.map(f => `<li>${f.feature}: ↑ (+${f.value.toFixed(4)})</li>`).join('');
+        document.getElementById('neg-factors').innerHTML = data.negative_factors.map(f => `<li>${f.feature}: ↓ (${f.value.toFixed(4)})</li>`).join('');
+    }
+
+    // Chatbot Logic
+    async function sendChat() {
+        const input = document.getElementById('chatInput').value;
+        const chatBox = document.getElementById('chatHistory');
+        
+        if(!input) return;
+        chatBox.innerHTML += `<p><strong>You:</strong> ${input}</p>`;
+        document.getElementById('chatInput').value = '';
+
+        const match = input.match(/\d+/);
+        if (!match) {
+            chatBox.innerHTML += `<p class="bot-msg">🤖 Please include a numeric ID.</p>`;
+            return;
+        }
+
+        chatBox.innerHTML += `<p class="bot-msg">🤖 Analyzing customer ${match[0]}... Please wait.</p>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        const data = await fetchAPI(match[0]);
+        
+        if (data.error) {
+            chatBox.innerHTML += `<p class="bot-msg">🤖 Error: ${data.error}</p>`;
+        } else {
+            let reply = `🤖 **Customer ${data.customer_id}** is **${data.risk_level} Risk**.<br>`;
+            reply += `Default Prob: ${data.prob_default} | Repay Prob: ${data.prob_repay}<br><br>`;
+            reply += `<strong>Top Risk Drivers:</strong><br>`;
+            data.positive_factors.slice(0,2).forEach(f => reply += `- ${f.feature} pushes risk UP.<br>`);
+            data.negative_factors.slice(0,2).forEach(f => reply += `- ${f.feature} pushes risk DOWN.<br>`);
+            chatBox.innerHTML += `<p class="bot-msg">${reply}</p>`;
+        }
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+</script>
+</body>
+</html>
