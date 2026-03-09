@@ -125,11 +125,11 @@ def predict():
     elif n_shap > n_feat:
         shap_vals = shap_vals[:n_feat]
     
-    base_val = explainer.expected_value 
-    
     base_val = explainer.expected_value
-    base_val = explainer.expected_value
-    if isinstance(base_val, (list, np.ndarray)): base_val = float(base_val[1])
+    if isinstance(base_val, (list, np.ndarray)): 
+        base_val = float(base_val[1])
+    else:
+        base_val = float(base_val)
     
     # Process top features
     order = np.argsort(np.abs(shap_vals))[::-1][:5]
@@ -139,6 +139,7 @@ def predict():
     # Generate Plot
     plot_b64 = generate_waterfall_plot(shap_vals, feature_names, base_val)
 
+    # Return clean, JSON-serializable data (removed raw_data)
     return jsonify({
         "customer_id": cid,
         "prob_default": f"{prob_d:.2%}",
@@ -146,9 +147,11 @@ def predict():
         "risk_level": risk,
         "positive_factors": pos,
         "negative_factors": neg,
-        "plot_base64": plot_b64,
-        "raw_data": x_df.to_dict(orient="records")[0]
+        "plot_base64": plot_b64
     })
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
