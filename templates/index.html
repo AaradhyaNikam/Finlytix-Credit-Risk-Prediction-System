@@ -2,79 +2,206 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Finlytix - Credit Risk AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Finlytix - AI Credit Risk</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
     <style>
-        body { background-color: #f8f9fa; }
-        .metric-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
-        #plot-container img { max-width: 100%; border-radius: 8px; }
-        .chat-box { height: 300px; overflow-y: auto; background: white; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; }
-        .bot-msg { color: #0d6efd; font-weight: 500; }
+        :root {
+            --primary-dark: #0f172a;
+            --primary-blue: #2563eb;
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #334155;
+            --danger-red: #ef4444;
+            --success-green: #10b981;
+        }
+
+        body { 
+            font-family: 'Poppins', sans-serif; 
+            background-color: var(--bg-color); 
+            color: var(--text-main); 
+        }
+
+        /* Header Styling */
+        .app-header {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, #1e293b 100%);
+            color: white;
+            padding: 30px 0;
+            margin-bottom: 40px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        /* Card Styling */
+        .glass-card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 25px;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
+            border: 1px solid #e2e8f0;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            height: 100%;
+        }
+        .glass-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(15, 23, 42, 0.1);
+        }
+
+        /* Dashboard Metrics */
+        .metric-title { font-size: 0.9rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+        .metric-value { font-size: 2.5rem; font-weight: 700; color: var(--primary-dark); margin: 10px 0 0 0; }
+        
+        /* Navigation Tabs */
+        .nav-tabs { border-bottom: none; gap: 10px; }
+        .nav-tabs .nav-link {
+            border: none;
+            color: #64748b;
+            font-weight: 500;
+            padding: 12px 25px;
+            border-radius: 30px;
+            background: #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .nav-tabs .nav-link.active {
+            background: var(--primary-blue);
+            color: white;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+        }
+
+        /* Risk Factor Lists */
+        .factor-list { list-style: none; padding: 0; margin: 0; }
+        .factor-list li {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .factor-up { background: #fef2f2; border-left: 4px solid var(--danger-red); color: #991b1b; }
+        .factor-down { background: #f0fdf4; border-left: 4px solid var(--success-green); color: #166534; }
+
+        /* Chatbot Interface */
+        .chat-container {
+            height: 450px;
+            overflow-y: auto;
+            padding: 20px;
+            background: var(--bg-color);
+            border-radius: 16px;
+            border: 1px solid #e2e8f0;
+        }
+        .chat-bubble {
+            padding: 15px 20px;
+            border-radius: 20px;
+            margin-bottom: 15px;
+            max-width: 80%;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .chat-user {
+            background: var(--primary-blue);
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        .chat-bot {
+            background: white;
+            color: var(--text-main);
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+            border: 1px solid #e2e8f0;
+        }
+
+        /* Inputs & Buttons */
+        .custom-input { border-radius: 10px; padding: 12px 20px; border: 1px solid #cbd5e1; box-shadow: none !important; }
+        .custom-btn { border-radius: 10px; padding: 12px 25px; font-weight: 600; background: var(--primary-blue); border: none; }
+        .custom-btn:hover { background: #1d4ed8; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3); }
+
+        #plot-container img { width: 100%; border-radius: 10px; }
     </style>
 </head>
 <body>
-<div class="container py-5">
-    <h1 class="mb-1">💰 Finlytix AI</h1>
-    <p class="text-muted mb-4">Transparent, Explainable & Ethical AI for Smart Financial Decisions</p>
 
-    <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+<div class="app-header text-center">
+    <div class="container">
+        <h1 class="fw-bold mb-2"><i class="fa-solid fa-chart-line me-2"></i>Finlytix AI</h1>
+        <p class="text-light opacity-75 mb-0">Transparent, Explainable & Ethical Credit Risk Intelligence</p>
+    </div>
+</div>
+
+<div class="container pb-5">
+    
+    <ul class="nav nav-tabs justify-content-center mb-5" id="myTab" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard">📊 Dashboard</button>
+            <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard"><i class="fa-solid fa-chart-pie me-2"></i>Dashboard</button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat">💬 Chatbot</button>
+            <button class="nav-link" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat"><i class="fa-solid fa-robot me-2"></i>AI Assistant</button>
         </li>
     </ul>
 
     <div class="tab-content" id="myTabContent">
         
         <div class="tab-pane fade show active" id="dashboard">
-            <div class="row mb-4">
-                <div class="col-md-6">
-                    <input type="number" id="custId" class="form-control" placeholder="Enter Customer ID (e.g., 1234)">
-                </div>
-                <div class="col-md-2">
-                    <button class="btn btn-primary w-100" onclick="getPrediction()">Analyze</button>
+            
+            <div class="row justify-content-center mb-5">
+                <div class="col-md-8 col-lg-6">
+                    <div class="input-group shadow-sm" style="border-radius: 10px;">
+                        <span class="input-group-text bg-white border-end-0" style="border-radius: 10px 0 0 10px;"><i class="fa-solid fa-magnifying-glass text-muted"></i></span>
+                        <input type="number" id="custId" class="form-control custom-input border-start-0" placeholder="Enter Customer ID (e.g., 10542)">
+                        <button class="btn custom-btn text-white" onclick="getPrediction()">Analyze Risk</button>
+                    </div>
                 </div>
             </div>
 
+            <div id="loading" class="text-center my-5" style="display: none;">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2 text-muted fw-medium">Analyzing risk factors with SHAP...</p>
+            </div>
+
             <div id="results" style="display: none;">
-                <div class="row mb-4">
+                <div class="row g-4 mb-4">
                     <div class="col-md-4">
-                        <div class="metric-card">
-                            <h5 class="text-muted">Default Probability</h5>
-                            <h2 id="prob_d">--</h2>
+                        <div class="glass-card text-center">
+                            <div class="metric-title"><i class="fa-solid fa-triangle-exclamation text-danger me-2"></i>Default Prob.</div>
+                            <div class="metric-value" id="prob_d">--</div>
                         </div>
                     </div>
                     <div class="col-md-4">
-                        <div class="metric-card">
-                            <h5 class="text-muted">Repayment Probability</h5>
-                            <h2 id="prob_r">--</h2>
+                        <div class="glass-card text-center">
+                            <div class="metric-title"><i class="fa-solid fa-shield-check text-success me-2"></i>Repayment Prob.</div>
+                            <div class="metric-value" id="prob_r">--</div>
                         </div>
                     </div>
                     <div class="col-md-4">
-                        <div class="metric-card">
-                            <h5 class="text-muted">Risk Level</h5>
-                            <h2 id="risk_lvl">--</h2>
+                        <div class="glass-card text-center" id="risk-card">
+                            <div class="metric-title"><i class="fa-solid fa-gauge-high text-primary me-2"></i>Risk Level</div>
+                            <div class="metric-value" id="risk_lvl">--</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="card p-3 mb-3">
-                            <h5>⬆️ Increasing Risk Factors</h5>
-                            <ul id="pos-factors"></ul>
+                <div class="row g-4">
+                    <div class="col-lg-5">
+                        <div class="glass-card mb-4">
+                            <h5 class="fw-bold mb-3"><i class="fa-solid fa-arrow-trend-up text-danger me-2"></i>Increases Risk</h5>
+                            <ul id="pos-factors" class="factor-list"></ul>
                         </div>
-                        <div class="card p-3">
-                            <h5>⬇️ Decreasing Risk Factors</h5>
-                            <ul id="neg-factors"></ul>
+                        <div class="glass-card">
+                            <h5 class="fw-bold mb-3"><i class="fa-solid fa-arrow-trend-down text-success me-2"></i>Decreases Risk</h5>
+                            <ul id="neg-factors" class="factor-list"></ul>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="card p-3 text-center" id="plot-container">
-                            <h5>Local Waterfall Explanation</h5>
-                            <img id="shap-img" src="" alt="SHAP Plot">
+                    <div class="col-lg-7">
+                        <div class="glass-card d-flex flex-column align-items-center justify-content-center" id="plot-container">
+                            <h5 class="fw-bold align-self-start mb-3"><i class="fa-solid fa-water text-primary me-2"></i>Local Waterfall Explanation</h5>
+                            <img id="shap-img" src="" alt="SHAP Plot" class="shadow-sm">
                         </div>
                     </div>
                 </div>
@@ -82,12 +209,26 @@
         </div>
 
         <div class="tab-pane fade" id="chat">
-            <div class="chat-box mb-3" id="chatHistory">
-                <p class="bot-msg">🤖 Hi! Type "check id [number]" to get a risk analysis and explanation.</p>
-            </div>
-            <div class="input-group">
-                <input type="text" id="chatInput" class="form-control" placeholder="e.g., check id 1234">
-                <button class="btn btn-primary" onclick="sendChat()">Send</button>
+            <div class="row justify-content-center">
+                <div class="col-md-10 col-lg-8">
+                    <div class="glass-card p-0 overflow-hidden">
+                        
+                        <div class="chat-container" id="chatHistory">
+                            <div class="chat-bubble chat-bot">
+                                <strong><i class="fa-solid fa-robot me-2"></i>Finlytix AI:</strong><br>
+                                Hello! I'm your explainable AI assistant. Type <code>check id [number]</code> and I'll predict the risk and explain my reasoning using SHAP.
+                            </div>
+                        </div>
+                        
+                        <div class="p-3 bg-white border-top">
+                            <div class="input-group">
+                                <input type="text" id="chatInput" class="form-control custom-input" placeholder="e.g., check id 1234" onkeypress="if(event.key === 'Enter') sendChat()">
+                                <button class="btn custom-btn text-white" onclick="sendChat()"><i class="fa-solid fa-paper-plane"></i></button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -96,73 +237,95 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-async function fetchAPI(cid) {
+    async function fetchAPI(cid) {
         try {
             const response = await fetch('/api/predict', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ customer_id: cid })
             });
-            
-            if (!response.ok) {
-                console.error("Server returned status:", response.status);
-                return { error: `Server error ${response.status}. Check your Python terminal.` };
-            }
-            
+            if (!response.ok) return { error: `Server error ${response.status}.` };
             return await response.json();
         } catch (error) {
-            console.error("Fetch failed:", error);
-            return { error: "Failed to connect to the backend. Is Flask running?" };
+            return { error: "Failed to connect to the backend." };
         }
     }
 
-    // Dashboard Logic
     async function getPrediction() {
         const cid = document.getElementById('custId').value;
-        if (!cid) return alert("Please enter an ID");
+        if (!cid) return alert("Please enter a valid Customer ID");
         
+        // Show loading spinner
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('loading').style.display = 'block';
+
         const data = await fetchAPI(cid);
+        document.getElementById('loading').style.display = 'none';
+
         if (data.error) return alert(data.error);
 
+        // Populate Dashboard
         document.getElementById('results').style.display = 'block';
         document.getElementById('prob_d').innerText = data.prob_default;
         document.getElementById('prob_r').innerText = data.prob_repay;
         document.getElementById('risk_lvl').innerText = data.risk_level;
         document.getElementById('shap-img').src = "data:image/png;base64," + data.plot_base64;
 
-        document.getElementById('pos-factors').innerHTML = data.positive_factors.map(f => `<li>${f.feature}: ↑ (+${f.value.toFixed(4)})</li>`).join('');
-        document.getElementById('neg-factors').innerHTML = data.negative_factors.map(f => `<li>${f.feature}: ↓ (${f.value.toFixed(4)})</li>`).join('');
+        // Color code the Risk Level card
+        const riskCard = document.getElementById('risk_lvl');
+        riskCard.style.color = data.risk_level === "High" ? "var(--danger-red)" : (data.risk_level === "Low" ? "var(--success-green)" : "#f59e0b");
+
+        // Format factors beautifully
+        document.getElementById('pos-factors').innerHTML = data.positive_factors.map(f => 
+            `<li class="factor-up"><span>${f.feature}</span> <span>↑ +${f.value.toFixed(4)}</span></li>`
+        ).join('');
+        
+        document.getElementById('neg-factors').innerHTML = data.negative_factors.map(f => 
+            `<li class="factor-down"><span>${f.feature}</span> <span>↓ ${f.value.toFixed(4)}</span></li>`
+        ).join('');
     }
 
-    // Chatbot Logic
     async function sendChat() {
-        const input = document.getElementById('chatInput').value;
+        const inputField = document.getElementById('chatInput');
+        const input = inputField.value;
         const chatBox = document.getElementById('chatHistory');
         
         if(!input) return;
-        chatBox.innerHTML += `<p><strong>You:</strong> ${input}</p>`;
-        document.getElementById('chatInput').value = '';
+        
+        // Append User Message
+        chatBox.innerHTML += `<div class="chat-bubble chat-user">${input}</div>`;
+        inputField.value = '';
+        chatBox.scrollTop = chatBox.scrollHeight;
 
         const match = input.match(/\d+/);
         if (!match) {
-            chatBox.innerHTML += `<p class="bot-msg">🤖 Please include a numeric ID.</p>`;
+            chatBox.innerHTML += `<div class="chat-bubble chat-bot">Please include a numeric ID in your request.</div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
             return;
         }
 
-        chatBox.innerHTML += `<p class="bot-msg">🤖 Analyzing customer ${match[0]}... Please wait.</p>`;
+        // Add temporary typing indicator
+        const typingId = "typing-" + Date.now();
+        chatBox.innerHTML += `<div id="${typingId}" class="chat-bubble chat-bot text-muted"><i class="fa-solid fa-circle-notch fa-spin me-2"></i>Analyzing data...</div>`;
         chatBox.scrollTop = chatBox.scrollHeight;
 
         const data = await fetchAPI(match[0]);
+        document.getElementById(typingId).remove(); // Remove typing indicator
         
         if (data.error) {
-            chatBox.innerHTML += `<p class="bot-msg">🤖 Error: ${data.error}</p>`;
+            chatBox.innerHTML += `<div class="chat-bubble chat-bot text-danger"><i class="fa-solid fa-circle-exclamation me-2"></i>${data.error}</div>`;
         } else {
-            let reply = `🤖 **Customer ${data.customer_id}** is **${data.risk_level} Risk**.<br>`;
-            reply += `Default Prob: ${data.prob_default} | Repay Prob: ${data.prob_repay}<br><br>`;
+            let reply = `<strong>Analysis for Customer ID: ${data.customer_id}</strong><br><br>`;
+            reply += `Risk Assessment: <strong>${data.risk_level}</strong><br>`;
+            reply += `Default Probability: ${data.prob_default}<br><br>`;
+            
             reply += `<strong>Top Risk Drivers:</strong><br>`;
-            data.positive_factors.slice(0,2).forEach(f => reply += `- ${f.feature} pushes risk UP.<br>`);
-            data.negative_factors.slice(0,2).forEach(f => reply += `- ${f.feature} pushes risk DOWN.<br>`);
-            chatBox.innerHTML += `<p class="bot-msg">${reply}</p>`;
+            data.positive_factors.slice(0,3).forEach(f => reply += `<span class="text-danger">↑ ${f.feature}</span><br>`);
+            
+            reply += `<br><strong>Top Stabilizing Factors:</strong><br>`;
+            data.negative_factors.slice(0,3).forEach(f => reply += `<span class="text-success">↓ ${f.feature}</span><br>`);
+            
+            chatBox.innerHTML += `<div class="chat-bubble chat-bot">${reply}</div>`;
         }
         chatBox.scrollTop = chatBox.scrollHeight;
     }
