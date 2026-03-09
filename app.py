@@ -54,15 +54,7 @@ except:
     fallback_cols = list(test_df.drop(columns=["id"]).columns)
 feature_names = safe_feature_names_from_pipeline(pipeline, fallback_cols)
 
-# -----------------------------
-# Plotting to Base64
-# -----------------------------
-def get_plot_base64(plt_instance):
-    buf = io.BytesIO()
-    plt_instance.savefig(buf, format="png", bbox_inches="tight")
-    plt_instance.clf()
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode('utf-8')
+
 
 def generate_waterfall_plot(vals, names, base_value):
     order = np.argsort(np.abs(vals))[::-1][:10]
@@ -71,14 +63,23 @@ def generate_waterfall_plot(vals, names, base_value):
     impacts = [v for _, v in contribs]
     colors = ["#E53935" if v > 0 else "#1E88E5" for v in impacts]
 
-    plt.figure(figsize=(8, 4))
+    # Use Object-Oriented Matplotlib (Thread-safe for Flask)
+    fig, ax = plt.subplots(figsize=(8, 4))
     for i, (l, v) in enumerate(zip(labels, impacts)):
-        plt.barh(l, v, color=colors[i])
-    plt.axvline(base_value, linestyle="--", color="#999999", linewidth=1)
-    plt.title("Local Waterfall Explanation")
-    plt.xlabel("Contribution to Risk Probability")
-    plt.tight_layout()
-    return get_plot_base64(plt)
+        ax.barh(l, v, color=colors[i])
+    
+    ax.axvline(base_value, linestyle="--", color="#999999", linewidth=1)
+    ax.set_title("Local Waterfall Explanation")
+    ax.set_xlabel("Contribution to Risk Probability")
+    fig.tight_layout()
+    
+    # Save to buffer
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)  # Close explicitly to free memory
+    buf.seek(0)
+    
+    return base64.b64encode(buf.read()).decode('utf-8')
 
 # -----------------------------
 # Routes
