@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 💰 Finlytix: AI Credit Risk Intelligence System
 
 An end-to-end **machine learning-powered credit risk assessment system** with explainable AI, interactive dashboard, and natural language interface.
@@ -62,3 +63,6 @@ streamlit run final_app.py
 ## 👨‍💻 Author
 Aaradhya Nikam  
 AI & Data Science Student
+=======
+
+>>>>>>> 21064b55d0b22276573d2ff67da5198e25667b03
