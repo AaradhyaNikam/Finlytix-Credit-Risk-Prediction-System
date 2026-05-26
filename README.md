@@ -54,7 +54,7 @@ Financial institutions require reliable, unbiased systems to evaluate loan appli
 
 It is recommended to run this project in a virtual environment using **Python 3.12.x**.
 
-```bash
+bash
 # 1. Clone the repository
 git clone [https://github.com/AaradhyaNikam/Finlytix-project.git](https://github.com/AaradhyaNikam/Finlytix-project.git)
 cd Finlytix-project
@@ -69,8 +69,8 @@ pip install -r requirements.txt
 # 4. Launch the application
 streamlit run final_app.py
 
-## 👨‍💻 Author
-Aaradhya Aashish Nikam 2nd-Year B.Tech Student, D.Y. Patil Engineering College, Pune * LinkedIn: https://www.linkedin.com/in/aaradhya-nikam-02a69b32a/
+--- 
+
+Aaradhya Aashish Nikam 2nd-Year B.Tech Student, D.Y. Patil Engineering College, Pune * LinkedIn: www.linkedin.com/in/aaradhya-nikam-02a69b32a
 
 Email: nikamaaradhya97@gmail.com
-=======
